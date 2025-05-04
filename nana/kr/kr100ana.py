@@ -31,8 +31,11 @@ def eff_of_sel(sel, name = "", do_print = True):
         print(f"{name} efficiency {seff}, {nsel}/{ntot}.")
     return eff
 
-dtrms2_low = lambda dt: -0.8 + 0.028 * (dt-20)
-dtrms2_upp = lambda dt:  2.7 + 0.040 * (dt-20)
+dtrms2_low = lambda dt: -0.7 + 0.030 * (dt-20) # Gonzalo's
+dtrms2_upp = lambda dt: 2.6 + 0.036 * (dt-20) # Gonzalo'2
+
+#dtrms2_low = lambda dt: -0.8 + 0.028 * (dt-20)
+#dtrms2_upp = lambda dt:  2.7 + 0.040 * (dt-20)
 dtrms2_cen = lambda dt:  1.0 + 0.034 * (dt-20)
 
 def dist_to_bandcenter(df): return df.Zrms**2 - dtrms2_cen(df.DT)
@@ -45,6 +48,7 @@ def df_extend(df):
     df['abs_d2band'] = np.abs(df['d2band'])
     dtguess          = dtime_guess(df.Zrms)
     df['DTguess']    = np.nan_to_num(dtguess, 1600)
+    df['R']          = df.X**2 + df.Y**2
     return df
 
 
@@ -89,6 +93,19 @@ def df_apply_selection(df, one_s1 = True):
         df_ = df_[sel_1s1]
 
     return df_
+
+def sel_fidutial_lowenergy(df, range_S2e = (3.0e3, 10.e3), max_radius = 140.):
+    sel1 = in_range(df.S2e, *range_S2e)
+    eff_of_sel(sel1, 'range S2e')
+
+    r2 = df.X**2 + df.Y**2
+    sel2 = r2 < max_radius**2
+    eff_of_sel(sel2, 'max radius')
+
+    sel = sel1 & sel2
+    eff_of_sel(sel, 'S23 range and max raidus')
+
+    return sel
 
 def df_compact_s1(df):
 
