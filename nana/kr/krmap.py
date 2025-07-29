@@ -104,7 +104,6 @@ krmap_names = ('counts', 'eref', 'dedt', 'dtref', 'ueref', 'udedt', 'cov',
 
 KrMap = namedtuple('KrMap', krmap_names)
 
-
 def krmap(coors, dtime, energy, bins = (36, 36), counts_min = 40, dt0 = 0):
     
     
@@ -186,35 +185,6 @@ def krmap_scale(coors, dtime, energy, krmap, scale = 1., mask = None):
     dtref  = dtref[idx]
 
     vals   = scale * ene / (eref - dedt * (dt - dtref)) 
-    
-    cene   = np.nan * np.ones(len(energy))
-    cene[sel == True] = vals
-
-    return cene
-
-def kr3d_scale(coors, energy, kr3d, scale = 1., mask = None):
-    
-    
-    ndim      = len(coors)
-    bin_edges = kr3d.bin_edges
-    
-    idx  = [np.digitize(coors[i], bin_edges[i])-1          for i in range(ndim)]
-    ssel = [(idx[i] >= 0) & (idx[i] < len(bin_edges[i])-1) for i in range(ndim)]
-    sel = ssel[0]
-    for xsel in ssel: np.logical_and(sel, xsel)
-    #sel = np.logical_and(*sel) if ndim >1 else sel[0]
-
-    idx    = tuple([idx[i][sel] for i in range(ndim)])
-    ene    = energy[sel] 
-    
-    eref   = kr3d.emean
-    mask   = kr3d.success if mask == None else mask
-    
-    eref[~mask] = np.nan
-    
-    eref   = eref[idx]
-    
-    vals   = scale * ene / eref
     
     cene   = np.nan * np.ones(len(energy))
     cene[sel == True] = vals
@@ -308,9 +278,10 @@ def accept_residuals(residuals,
     return done, sel
 
 
-def clean_krmap(coors, dtime, energy, min_sigma = 0.9, bins = 50, counts_min = 40, dt0 = 0, plot = True):
+def krmap_clean(coors, dtime, energy, min_sigma = 0.9, bins = 50, counts_min = 40, dt0 = 0, plot = True):
     sel     = np.ones(len(energy), bool)
     clean   = np.copy(sel)
+    res     = np.zeros(len(energy), float)
     done    = False
     while (not done):
         icoors  = [coor[clean] for coor in coors]
@@ -322,7 +293,8 @@ def clean_krmap(coors, dtime, energy, min_sigma = 0.9, bins = 50, counts_min = 4
                                     fun = 'gaus', nsigma = 4., 
                                     min_sigma = min_sigma, plot = plot)
         clean[clean == True] = usel
-    return krmap_, clean
+    res = residuals
+    return krmap_, res, clean
 
 
 
@@ -333,43 +305,96 @@ def clean_krmap(coors, dtime, energy, min_sigma = 0.9, bins = 50, counts_min = 4
 #-------------------------
 
 
-krvoxels_names = ('counts', 'emean', 'estd', 'coors_means', 'coors_stds',
-                  'success', 'bin_centers', 'bin_edges')
+# krvoxels_names = ('counts', 'emean', 'estd', 'coors_means', 'coors_stds',
+#                   'success', 'bin_centers', 'bin_edges')
 
-KrVoxels = namedtuple('KrVoxels', krvoxels_names)
+# KrVoxels = namedtuple('KrVoxels', krvoxels_names)
 
 
-def krvoxels(coors, energy, bins = (30, 30, 30), counts_min = 40):
+# def krvoxels(coors, energy, bins = (30, 30, 30), counts_min = 40):
 
-    counts, ebins, ibins = stats.binned_statistic_dd(coors, energy, 
-                                                     bins = bins, statistic = 'count',
-                                                     expand_binnumbers = True)    
+#     counts, ebins, ibins = stats.binned_statistic_dd(coors, energy, 
+#                                                      bins = bins, statistic = 'count',
+#                                                      expand_binnumbers = True)    
     
-    mask = counts > counts_min
+#     mask = counts > counts_min
 
-    emean, _, _ = stats.binned_statistic_dd(coors, energy, 
-                                                     bins = bins, statistic = 'mean',
-                                                     expand_binnumbers = True)    
+#     emean, _, _ = stats.binned_statistic_dd(coors, energy, 
+#                                                      bins = bins, statistic = 'mean',
+#                                                      expand_binnumbers = True)    
 
-    estd, _, _ = stats.binned_statistic_dd(coors, energy, 
-                                                     bins = bins, statistic = 'std',
-                                                     expand_binnumbers = True)    
+#     estd, _, _ = stats.binned_statistic_dd(coors, energy, 
+#                                                      bins = bins, statistic = 'std',
+#                                                      expand_binnumbers = True)    
     
-    cmeans, cstds = [], []
-    for coor in coors:
-        cmean, _, _ = stats.binned_statistic_dd(coors, coor, 
-                                                     bins = bins, statistic = 'mean',
-                                                     expand_binnumbers = True)    
-        cstd, _,  _ = stats.binned_statistic_dd(coors, coor, 
-                                                     bins = bins, statistic = 'std',
-                                                     expand_binnumbers = True)
-        cmeans.append(cmean)
-        cstds.append (cstd)
+#     cmeans, cstds = [], []
+#     for coor in coors:
+#         cmean, _, _ = stats.binned_statistic_dd(coors, coor, 
+#                                                      bins = bins, statistic = 'mean',
+#                                                      expand_binnumbers = True)    
+#         cstd, _,  _ = stats.binned_statistic_dd(coors, coor, 
+#                                                      bins = bins, statistic = 'std',
+#                                                      expand_binnumbers = True)
+#         cmeans.append(cmean)
+#         cstds.append (cstd)
 
-    cbins = [0.5 * (x[1:] + x[:-1]) for x in ebins]
+#     cbins = [0.5 * (x[1:] + x[:-1]) for x in ebins]
 
-    krvoxels = KrVoxels(counts, emean, estd, cmeans, cstds, mask, cbins, ebins)
-    return krvoxels
+#     krvoxels = KrVoxels(counts, emean, estd, cmeans, cstds, mask, cbins, ebins)
+#     return krvoxels
+
+#------------------------
+# 2D Map
+#-------------------------
+
+krmap_ltu_names = ('rmax', 'eref', 'ueref', 'lt', 'ult', 'success', 'prof')
+
+KrMapLTU   = namedtuple('KrMapLTU', krmap_ltu_names)
+
+
+def lifetime(dtime, energy):
+    ts   = dtime
+    enes = energy
+    st_fun = lambda ts, a, b : a - b * ts
+    par, var = optimize.curve_fit(st_fun, ts, enes)
+    eref  = par[0]
+    dedt  = par[1]
+    ueref = np.sqrt(var[0, 0])
+    udedt = np.sqrt(var[1, 1])
+    lt    = eref/dedt
+    ult   = np.sqrt((ueref/dedt)**2 + (lt * udedt/dedt)**2)  
+    return eref, ueref, lt, ult
+
+
+def krmap_ltunique(coors, dtime, energy, bins = (36, 36),
+                   counts_min = 40, rmax = 350., 
+                   boost = False, scale = 1.):
+
+    def _map(energy, boost = False, k2d = None):
+        r = np.sqrt(coors[0]**2 + coors[1]**2)
+        rsel = r < rmax
+        cene = lambda ene: prof.profile_scale(coors, ene, k2d.prof, scale = scale)
+        ene = energy if boost == False else cene(energy)
+        eref, ueref, lt, ult = lifetime(dtime[rsel], ene[rsel])
+        ene = energy * np.exp(dtime/lt)
+        k2d, res  = prof.profile(coors, ene, bins = bins) 
+        success = k2d.counts > counts_min
+        k2map = KrMapLTU(rmax, eref, ueref, lt, ult, success, k2d)
+        return k2map, res
+
+    k2d, res = _map(energy)
+    if (boost == True):
+        k2d, res = _map(energy, boost = True, k2d = k2d)
+    return k2d, res
+
+def krmap_ltunique_scale(coors, dtime, energy, krmap, scale = 1.):
+
+    ene     = energy * np.exp(dtime/krmap.lt)
+    correne = prof.profile_scale(coors, ene, krmap.prof, scale = scale)
+    return correne
+
+    
+
 
 #-----------------------
 #    Plotting
