@@ -406,7 +406,7 @@ load = lambda key, ifile, map : prof.load(key, ifile, map)
 
 
 #---------------------------------------
-#    Accept Residuals - Work in progress
+#    Accept Residuals 
 #--------------------------------------
 
 def accept_residuals(residuals, 
@@ -444,29 +444,31 @@ def accept_residuals(residuals,
 #   Plotting
 #------------------------
 
-def plot_data(df, bins):
+#def plot_xydt_energy_profiles(xdf, nbins = 100, names = ('dtime', 'x', 'y'), ename = 'energy'):
+
+def plot_data(x, y, dtime, energy, bins):
     """
     Plot Kr Data
     """
     canvas = pltext.canvas(6, 2)
     canvas(1)
-    pltext.hist(df.dtime, 100);
+    pltext.hist(dtime, 100);
     plt.xlabel('drift time (ms)')
     canvas(2)
-    pltext.hist(df.x, 100);
+    pltext.hist(x, 100);
     plt.xlabel('x (mm)')
     canvas(3)
-    pltext.hist(df.y, 100);
+    pltext.hist(y, 100);
     plt.xlabel('y (mm)')
     canvas(4)
-    pltext.hist(df.energy, 100);
+    pltext.hist(energy, 100);
     plt.xlabel('energy (keV)')
     canvas(5)
-    plt.hist2d(df.dtime, df.energy, bins) 
+    plt.hist2d(dtime, energy, bins) 
     plt.xlabel('drift time (ms)'); plt.ylabel('energy (keV)')
     plt.colorbar();
     canvas(6)
-    mean, ebins, _  = stats.binned_statistic_dd((df.x, df.y), df.energy,
+    mean, ebins, _  = stats.binned_statistic_dd((x, y), energy,
                                                 bins = bins , statistic = 'mean')
     cbins = [0.5 * (b[1:] + b[:-1]) for b in ebins]
     mesh = np.meshgrid(*cbins)

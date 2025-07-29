@@ -192,6 +192,36 @@ def krmap_scale(coors, dtime, energy, krmap, scale = 1., mask = None):
 
     return cene
 
+def kr3d_scale(coors, energy, kr3d, scale = 1., mask = None):
+    
+    
+    ndim      = len(coors)
+    bin_edges = kr3d.bin_edges
+    
+    idx  = [np.digitize(coors[i], bin_edges[i])-1          for i in range(ndim)]
+    ssel = [(idx[i] >= 0) & (idx[i] < len(bin_edges[i])-1) for i in range(ndim)]
+    sel = ssel[0]
+    for xsel in ssel: np.logical_and(sel, xsel)
+    #sel = np.logical_and(*sel) if ndim >1 else sel[0]
+
+    idx    = tuple([idx[i][sel] for i in range(ndim)])
+    ene    = energy[sel] 
+    
+    eref   = kr3d.emean
+    mask   = kr3d.success if mask == None else mask
+    
+    eref[~mask] = np.nan
+    
+    eref   = eref[idx]
+    
+    vals   = scale * ene / eref
+    
+    cene   = np.nan * np.ones(len(energy))
+    cene[sel == True] = vals
+
+    return cene
+
+
 
 #--- Conversion to LT
 
@@ -338,7 +368,7 @@ def krvoxels(coors, energy, bins = (30, 30, 30), counts_min = 40):
 
     cbins = [0.5 * (x[1:] + x[:-1]) for x in ebins]
 
-    krvoxels = KrVoxels(counts, emean, estd, cmeans, cstds, mask, ebins, cbins)
+    krvoxels = KrVoxels(counts, emean, estd, cmeans, cstds, mask, cbins, ebins)
     return krvoxels
 
 #-----------------------
@@ -409,9 +439,9 @@ def plot_xyvar(var, bins = None, title = '', mask = None, nbins = 100, range = N
     return
 
 
-def plot_xydt_energy_profiles(xdf, nbins = 100, names = ('dtime', 'x', 'y')):
+def plot_xydt_energy_profiles(xdf, nbins = 100, names = ('dtime', 'x', 'y'), ename = 'energy'):
     for name in names:
-        zprof, _  = prof.profile((xdf[name],), xdf.energy, nbins)
+        zprof, _  = prof.profile((xdf[name],), xdf[ename], nbins)
         prof.plot_profile(zprof, nbins = nbins, stats = ('mean',), coornames = (name,))
     return
     

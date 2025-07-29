@@ -13,6 +13,7 @@ import pandas            as pd
 import matplotlib.pyplot as plt
 
 import hipy.utils        as ut
+import hipy.histos       as histos
 import hipy.pltext       as pltext
 #import hipy.profile      as prof
 import hipy.styles       as pltsty
@@ -23,7 +24,7 @@ pltsty.style('jhep')
 #from invisible_cities.io.dst_io import load_dst, load_dsts
 from invisible_cities.core.core_functions import in_range
 
-def eff_of_sel(sel, name = "", do_print = True):
+def eff_of_sel(sel, name = "", do_print = False):
     nsel, ntot = np.sum(sel), len(sel)
     eff = nsel/float(ntot)
     if do_print:
@@ -41,20 +42,25 @@ dtrms2_cen = lambda dt:  1.0 + 0.034 * (dt-20)
 def dist_to_bandcenter(df): return df.Zrms**2 - dtrms2_cen(df.DT)
 
 dtime_guess = lambda zrms: (zrms**2 - 1.0)/0.034 + 20.
-
 def df_extend(df):
+    """ Extend the Kdst to include the distance to the S2w vs DT band, DT-guess and R
+    """
 
     df['d2band']     = dist_to_bandcenter(df)
     df['abs_d2band'] = np.abs(df['d2band'])
     dtguess          = dtime_guess(df.Zrms)
     df['DTguess']    = np.nan_to_num(dtguess, 1600)
-    df['R']          = df.X**2 + df.Y**2
+    r2               = df.X**2 + df.Y**2
+    df['R2']         = r2
+    df['R']          = np.sqrt(r2)
     return df
 
 
 #---------- Selections
 
 def sel_in_band(df):
+    """ selection in DTrms vs DT
+    """
     return in_range(df.Zrms**2, dtrms2_low(df.DT), dtrms2_upp(df.DT))
 
 def sel_1S1(df):
@@ -67,32 +73,43 @@ def sel_1S1(df):
     return sel
 
 
-def df_apply_selection(df, one_s1 = True):
-    sel_1S2   = df.nS2.values == 1
-    eff_of_sel(sel_1S2, "1S2")
+def kdst_select(df):
+    """ kdst selection
+        - 1S2 
+        - S2 in trigger time (1.35e6, 1.46e6) tics in 40 ns
+        - S2e in range (3e3, 11e4) pes
+        - DTrms vs DT in band 
+            low -0.7 + 0.030 * (dt-20) # Gonzalo's
+            upp  2.6 + 0.036 * (dt-20) # Gonzalo's
+        - 1S1 in band
+    """
+    sel_1S2 = df.nS2.values == 1
 
     range_S2t = (1.35e6, 1.46e6)
     sel_S2t   = in_range(df.S2t, *range_S2t)
-    eff_of_sel(sel_S2t, "S2 in trigger time")
 
-    #range_S2e = (3e3, 11e4)
-    #sel_S2e   = in_range(df.S2t, *range_S2e)
-    #eff_of_sel(sel_S2e, "S2e")
+    range_S2e = (3e3, 11e3)
+    sel_S2e   = in_range(df.S2e, *range_S2e)
 
     sel_inband = sel_in_band(df)
-    eff_of_sel(sel_S2t, "S1 in band")
 
-    sel = sel_1S2 & sel_S2t &  sel_inband
-    eff_of_sel(sel, "1S2 & S2 in trigger time & some S1 in band")
-
+    sel = sel_1S2 & sel_S2t &  sel_inband & sel_S2e    
     df_ = df[sel]
+    sel_1s1 = sel_1S1(df_)
+    df_ = df_[sel_1s1]
 
-    if (one_s1):
-        sel_1s1 = sel_1S1(df_)
-        eff_of_sel(sel_1s1, "1S1 in band") 
-        df_ = df_[sel_1s1]
+    names = ('1S2', 'S2-trigger', 'S2e', 'S2w-DT band', '1S1 in band')
+    sels  = (sel_1S2, sel_S2t, sel_S2e, sel_inband)
+    steps = []
+    usel  = sel_1S2
+    for name, sel in zip(names, sels):
+        usel = sel & usel
+        eff  = eff_of_sel(usel)
+        steps.append((name, eff))
+    eff_final = len(df_)/len(df)
+    steps.append(('1S1 in band', eff_final))
 
-    return df_
+    return df_, steps
 
 def sel_fidutial_lowenergy(df, range_S2e = (3.0e3, 10.e3), max_radius = 140.):
     sel1 = in_range(df.S2e, *range_S2e)
@@ -220,3 +237,57 @@ def monitor_kr_distribution(df):
     plt.xlabel("DT ($\mu$s)"); plt.ylabel("R$^2$ (mm$^2$)");
 
     plt.tight_layout();
+
+
+#-------------------
+# Energy resolution
+#-------------------
+
+def energy_resolution(energy, plot = False):
+    xsel = ~np.isnan(energy)
+    nbins, erange = 100, (38., 45)
+    if (plot):
+        pltext.hist(energy[xsel], nbins, erange);
+    xfun = pltext.hfit if plot else histos.hfit
+    cc = xfun(energy[xsel], nbins, range = erange, fun = 'gaus');
+    pars = cc[3]
+    sigma, mu = pars[2], pars[1]
+    fwhm = 235.5 * sigma/mu
+    if (plot):
+        print(' Resolution {:6.2f} % FWHM'.format(fwhm))
+    return fwhm
+
+def eres_in_bins(eres, values, bins):
+    dt0 = bins[0]
+    ress = []
+    for dt in bins[1:]:
+        isel = ut.in_range(values, (dt0, dt))
+        ires = energy_resolution(eres[isel]) 
+        dt0 = dt
+        ress.append(ires)
+    return ress
+
+def plot_eres_in_regions(cdf):
+
+    dtbins = np.linspace(0, 1500, 10)
+    ress = []
+    for rmax in (200, 450):
+        usel = ut.in_range(cdf.r, (0, rmax))
+        ires = eres_in_bins(cdf.energy[usel], cdf.dtime[usel], dtbins)
+        ress.append(ires)
+
+    rads = np.linspace(0, 450, 10)
+
+    cv = pltext.canvas(2, 2)
+    cv(1)
+    plt.plot(ut.centers(dtbins), ress[0], marker = 'o', linestyle = 'None', label = r"R $<$ 200");
+    plt.plot(ut.centers(dtbins), ress[1], marker = 'o', linestyle = 'None', label = r"R $<$ 450");
+    plt.legend(); plt.xlabel(r"drift time ($\mu$s)"); plt.ylabel("energy resolution (\% FWHM)");
+
+    rrs   = np.linspace(0, 450, 10)
+    ress2 = eres_in_bins(cdf.energy, cdf.r, rrs)
+    cv(2)
+    plt.plot(ut.centers(rrs), ress2, marker = 'o', linestyle = 'None');
+    plt.xlabel(r"radius (mm)"); plt.ylabel("energy resolution (\% FWHM)");
+
+
