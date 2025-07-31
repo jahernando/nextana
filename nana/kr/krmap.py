@@ -98,13 +98,26 @@ def residuals_(ts, es, par, cov):
     return res, sig, sigma 
 
 
-krmap_names = ('counts', 'eref', 'dedt', 'dtref', 'ueref', 'udedt', 'cov',
+krmap_names = ('counts', 'eref', 'dedt', 'dtref', 'ueref', 'udedt', 'cov', 'lt', 'ult',
                'chi2', 'pvalue', 'sigma', 'success',
                'bin_centers', 'bin_edges')
 
 KrMap = namedtuple('KrMap', krmap_names)
 
+def lt_from_dedt(eref, ueref, dedt, udedt):
+    lt  = eref/dedt
+    ult = np.sqrt((ueref/dedt)**2 + (lt * udedt/dedt)**2)
+    return lt, ult
+
+
 def krmap(coors, dtime, energy, bins = (36, 36), counts_min = 40, dt0 = 0):
+    """
+
+    Compute a Kr map: returns arrays in (x, y) with the fit of each bin to a function 
+    to get the E0 (light) and the dE/dt (lost of energy per unit of drift time)
+
+    Returns a KrMap 
+    """
     
     
     counts, ebins, ibins = stats.binned_statistic_dd(coors, energy, 
@@ -119,6 +132,8 @@ def krmap(coors, dtime, energy, bins = (36, 36), counts_min = 40, dt0 = 0):
 
     eref  = np.zeros(shape = counts.shape)
     dedt  = np.zeros(shape = counts.shape)
+    lt    = np.zeros(shape = counts.shape)
+    ult   = np.zeros(shape = counts.shape)
     dtref = np.zeros(shape = counts.shape)
     ueref = np.zeros(shape = counts.shape)
     udedt = np.zeros(shape = counts.shape)
@@ -142,8 +157,7 @@ def krmap(coors, dtime, energy, bins = (36, 36), counts_min = 40, dt0 = 0):
         dtref[i0, i1] = tij
         ueref[i0, i1] = np.sqrt(var[0, 0])
         udedt[i0, i1] = np.sqrt(var[1, 1])
-        cov  [i0, i1] = var[0, 1]
-        
+        cov  [i0, i1] = var[0, 1]        
         res, _ , ijsig = residuals_(ts - tij, enes, par, var)
         residuals[ijsel] = res/ijsig
         ijchi2 = np.sum(res * res)/(len(res) - 2)
@@ -152,7 +166,9 @@ def krmap(coors, dtime, energy, bins = (36, 36), counts_min = 40, dt0 = 0):
         pval  [i0, i1] = ijpval
         sig   [i0, i1] = ijsig
         
-    ikrmap = KrMap(counts, eref, dedt, dtref, ueref, udedt, cov,
+    lt, ult = lt_from_dedt(eref, ueref, dedt, udedt)
+
+    ikrmap = KrMap(counts, eref, dedt, dtref, ueref, udedt, cov, lt, ult,
                    chi2, pval, sig, success,
                    cbins, ebins)
     
@@ -160,6 +176,9 @@ def krmap(coors, dtime, energy, bins = (36, 36), counts_min = 40, dt0 = 0):
 
 
 def krmap_scale(coors, dtime, energy, krmap, scale = 1., mask = None):
+    """
+    using a KrMap scale a set of coors (x, y) and dtime and energy to a reference value scale
+    """
     
     
     ndim      = len(coors)
@@ -195,12 +214,10 @@ def krmap_scale(coors, dtime, energy, krmap, scale = 1., mask = None):
 
 #--- Conversion to LT
 
-def krmap_lifetime(krmap):
-    dedt, udedt = krmap.dedt, krmap.udedt
-    eref, ueref = krmap.eref, krmap.ueref
-    lt  = eref/dedt
-    ult = np.sqrt((ueref/dedt)**2 + (lt * udedt/dedt)**2)
-    return lt, ult
+#def lifetime(eref, ueref, dedt, udedt):
+#    lt  = eref/dedt
+#    ult = np.sqrt((ueref/dedt)**2 + (lt * udedt/dedt)**2)
+#    return lt, ult
 
 
 # coordinates and index utilities
@@ -235,8 +252,7 @@ def coors_mask(icoors, mask, ref = 1000):
 
 
 #--- Save and Load into/from h5
-#---------------------------------
-    
+#---------------------------------    
 
 save = prof.save
 
@@ -393,8 +409,15 @@ def krmap_ltunique_scale(coors, dtime, energy, krmap, scale = 1.):
     correne = prof.profile_scale(coors, ene, krmap.prof, scale = scale)
     return correne
 
-    
+#----
+#
+#----
 
+def krmap_3d(coors, energy, bins = (36, 36, 10), counts_min = 40):
+    return prof.profile(coors, energy, bins = bins) 
+
+def krmap_3d_scale(coors, energy, krmap, scale = 1.):
+    return prof.profile_scale(coors, energy, krmap, scale = scale)
 
 #-----------------------
 #    Plotting
