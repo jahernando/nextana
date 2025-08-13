@@ -23,6 +23,23 @@ from invisible_cities.reco       import corrections as cof
 #import hipy.profile      as prof
 
 
+# from invisible_cities.reco.corrections import read_maps, apply_all_correction
+# from invisible_cities.types.symbols import NormStrategy
+
+# def get_icaros_correction_function(map_path):
+#     #reco = pd.read_hdf(file, 'RECO/Events')
+
+#     map_path = store_path + 'map_MC_4bar_15063.h5'
+#     maps = read_maps(map_path)
+#     get_coef  = apply_all_correction(maps
+#                                     , apply_temp = False
+#                                     , norm_strat = NormStrategy.kr)
+#     return get_coef
+
+
+# #corr = get_coef(reco.X, reco.Y, reco.Z, reco.time)
+# #reco['Ec_map']  = reco.E * corr
+
 def get_map(map_fname):
     maps      = cof.read_maps(map_fname)
     return maps

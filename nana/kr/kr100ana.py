@@ -267,20 +267,21 @@ def eres_in_bins(eres, values, bins):
         ress.append(ires)
     return ress
 
-def plot_eres_in_regions(cdf):
+def plot_eres_in_regions(cdf, nbins = 20):
 
-    dtbins = np.linspace(0, 1500, 10)
+    dtbins = np.linspace(0, 1400, nbins)
     ress = []
-    for rmax in (200, 450):
+    for rmax in (200, 400, 450):
         usel = ut.in_range(cdf.r, (0, rmax))
         ires = eres_in_bins(cdf.energy[usel], cdf.dtime[usel], dtbins)
         ress.append(ires)
 
-    rads = np.linspace(0, 450, 10)
+    rads = np.linspace(0, 450, nbins)
 
     cv = pltext.canvas(2, 2)
     cv(1)
     plt.plot(ut.centers(dtbins), ress[0], marker = 'o', linestyle = 'None', label = r"R $<$ 200");
+    plt.plot(ut.centers(dtbins), ress[0], marker = 'o', linestyle = 'None', label = r"R $<$ 400");
     plt.plot(ut.centers(dtbins), ress[1], marker = 'o', linestyle = 'None', label = r"R $<$ 450");
     plt.legend(); plt.xlabel(r"drift time ($\mu$s)"); plt.ylabel("energy resolution (\% FWHM)");
 
