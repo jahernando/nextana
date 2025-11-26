@@ -99,6 +99,31 @@ def graph_connectivity(graph):
     largest_component = graph.subgraph(largest_component_nodes).copy()
     return components, largest_component
 
+
+import numpy as np
+
+# def nodos_a_distancia(graph, u, d, tol = 1e-9):
+#     """Devuelve los nodos cuya distancia euclidiana a u es d."""
+#     # posición del nodo u
+
+#     x0, y0, z0 = graph.nodes[u]["pos"]
+
+#     seleccionados = []
+#     for v in graph.nodes:
+#         if v == u:
+#             continue
+#         x, y, z = graph.nodes[v]["pos"]
+
+#         dist = np.sqrt((x - x0)**2 + (y - y0)**2 + (z - z0)**2)
+
+#         # tolerancia para evitar errores de coma flotante
+#         if abs(dist - d) < tol:
+#             seleccionados.append(v)
+
+#     return seleccionados
+
+
+
 def display_graph(graph, extremes = []):
     """
     Display the graph using a 2D layout.
@@ -113,7 +138,7 @@ def display_graph(graph, extremes = []):
 
     weights = nx.get_node_attributes(graph, "weight")
     node_colors = list(weights.values())
-    node_sizes  = [w * 20 for w in node_colors]  # escala ajustable
+    node_sizes  = [w * 4e3 for w in node_colors]  # escala ajustable
     #node_sizes =  200 * node_sizes/np.max(node_sizes) 
 
     # Posiciones del grafo

@@ -29,11 +29,26 @@ def get_bins(coors, bin_widths = (1, 1, 1)):
     bins = [np.arange(np.min(coor) - 3*width/2, np.max(coor) + 3*width/2, width) for coor, width in zip(coors, bin_widths)]
     return bins
 
+def get_deconvoluted_event(evt):
+    """Get the deconvoluted data with coordinates and normalized energy."""
+    evt['enecor'] = evt.energy.values * evt.decopred.values
+    evtdec = evt[evt.decopred == 1].copy()
+    for ievt, zslice in evtdec.groupby('zbin'):
+        zslice.enecor = zslice.enecor.values / zslice.enecor.sum()
+    evtdec.enecor = evtdec.enecor.values / evtdec.enecor.sum()
+    return evtdec
+
+def get_deconvoluted_data(data, bin_info):
+    ## TODO
+    """Get the deconvoluted data with coordinates and normalized energy."""
+    return data[data.decopred == 1].copy()
+
+
 def event_display(coors, bins, ene = None):
     """Display a 2D histogram of the event given the coordinates and bin width."""
     cmap = 'plasma' # 'viridis', 'cividis', 'plasma'
     cv   = pltext.canvas(4, 2)
-    clabel = 'counts' if ene is None else 'energy (keV)'
+    clabel = 'counts' if ene is None else 'energy (normalized)'
     ene    = ene if ene is not None else np.ones_like(coors[0])
     labels = ['X', 'Y', 'Z']
     for k, coor in enumerate(((0, 1), (2, 1), (0, 2))):
