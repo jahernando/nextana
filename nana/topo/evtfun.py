@@ -6,13 +6,13 @@ from collections import namedtuple
 import itertools as itertools
 
 import numpy             as np
-#import pandas            as pd
+import pandas            as pd
 import matplotlib.pyplot as plt
 
 #import hipy.utils        as ut
 import hipy.pltext       as pltext
-#from hipy.styles import style
-#style()
+from hipy.styles import style
+style()
 
 
 def get_coors(data, bin_info):
@@ -90,6 +90,36 @@ def test_get_deconvoluted_data(data):
         assert np.isclose(ecc, ecc2), f"corrected normalize energy mismatch for id {idd} {zbin}: {ecc} != {ecc2}"
 
     return
+
+#--------------
+
+def summary_event(evt):
+    idd    = evt.dataset_id.unique()[0]
+    nhits  = evt.energy.count()
+    etot   = evt.energy.sum()
+    devt   = evt[evt.decopred == 1]
+    spine_nhits = devt.energy.count()
+    spine_ene   = devt.energy.sum()
+    df = {'dataset_id' : idd, 'nhits': nhits, 'energy': etot, 'spine_nhits': spine_nhits, 'spine_energy': spine_ene}
+    return df
+
+
+def summary_data(data):
+    idd    = data.dataset_id.unique()
+    evts   = data.groupby('dataset_id')
+    nhits  = evts.energy.count()
+    etot   = evts.energy.sum()
+    dcov   = data[data.decopred == 1]
+    devts  = dcov.groupby('dataset_id')
+    spine_nhits = devts.energy.count()
+    spine_ene   = devts.energy.sum()
+    df = {'dataset_id' : idd, 'nhits': nhits, 'energy': etot, 'spine_nhits': spine_nhits, 'spine_energy': spine_ene}
+    return df
+
+
+
+#--------------
+
 
 def event_display(coors, bins, ene = None):
     """Display a 2D histogram of the event given the coordinates and bin width."""
