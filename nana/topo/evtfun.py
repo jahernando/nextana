@@ -29,20 +29,55 @@ def get_bins(coors, bin_widths = (1, 1, 1)):
     bins = [np.arange(np.min(coor) - 3*width/2, np.max(coor) + 3*width/2, width) for coor, width in zip(coors, bin_widths)]
     return bins
 
-def get_deconvoluted_event(evt):
-    """Get the deconvoluted data with coordinates and normalized energy."""
-    evt['enecor'] = evt.energy.values * evt.decopred.values
-    evtdec = evt[evt.decopred == 1].copy()
-    for ievt, zslice in evtdec.groupby('zbin'):
-        zslice.enecor = zslice.enecor.values / zslice.enecor.sum()
-    evtdec.enecor = evtdec.enecor.values / evtdec.enecor.sum()
-    return evtdec
+# def get_deconvoluted_event(data):
+#     """Get the deconvoluted data with coordinates and normalized energy."""
+#     data['enecor'] = data.energy.values * data.decopred.values
+#     emissing  = 0.
+#     df["enecor"] = df.groupby("zbin")["energy"].transform(lambda x: x * k)
 
-def get_deconvoluted_data(data, bin_info):
-    ## TODO
-    """Get the deconvoluted data with coordinates and normalized energy."""
-    return data[data.decopred == 1].copy()
+#         zslice.enecor = zslice.enecor.values * ene0/ene1
+#         if ene1 == 0: emissing += ene0
+#     print(f"  Missing energy in deconvoluted event: {emissing:.2f} (out of {data.energy.sum():.2f})")
+#     return data
 
+def get_deconvoluted_data(data):
+    ## share the energy per slice
+    data['enecc'] = data.energy.values * data.decopred.values
+    idgroup = ['dataset_id', 'zbin']
+    ene  = data.groupby(idgroup).energy.sum()
+    enec = data.groupby(idgroup).enecc.sum()
+    data['enecc']  = data.groupby(idgroup)['enecc'].transform(lambda x: x * ene[x.name]/enec[x.name] if enec[x.name]>0 else 0)
+    ## share the total energy for empty decovoluted slices
+    iddata = 'dataset_id'
+    etot = data.groupby(iddata).enecc.sum()
+    data['enecn'] = data.groupby(iddata) ['enecc'].transform(lambda x: x * (1./etot[x.name]))
+    return data
+
+def test_get_deconvoluted_data(data):
+
+    data_ = get_deconvoluted_data(data)
+
+    # test that the total energy in the slice is preserved for enecc
+    idgroup = ['dataset_id', 'zbin']    
+    ene   = data_.groupby(idgroup).energy.sum()
+    enecc = data_.groupby(idgroup).enecc.sum()
+    enecn = data_.groupby(idgroup).enecn.sum()
+    iddata    = 'dataset_id'
+    enecc_sum = data_.groupby(iddata) .enecc.sum()
+
+    for (idd, zbin), ecc in enecc.items():
+        e00     = ene  .get((idd, zbin), 0.)
+        ecn     = enecn.get((idd, zbin), 0.) 
+        sumecc  = enecc_sum.get(idd, 0.)
+
+        ## energy per slice should be preserved after selection of devonvoluted voxels
+        assert np.isclose(ecc, e00) or np.isclose(ecc, 0.), f"Energy mismatch for id {idd} zbin {zbin}: {ecc} != {e00}"
+
+        ## noralized energy per slice should be correctly computed
+        ecc2  = ecn * (sumecc) 
+        assert np.isclose(ecc, ecc2), f"corrected normalize energy mismatch for id {idd} {zbin}: {ecc} != {ecc2}"
+
+    return
 
 def event_display(coors, bins, ene = None):
     """Display a 2D histogram of the event given the coordinates and bin width."""
