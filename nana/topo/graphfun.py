@@ -6,6 +6,8 @@
 import itertools as itertools
 
 import numpy             as np
+npa    = np.array
+
 #import pandas            as pd
 import matplotlib.pyplot as plt
 
@@ -100,31 +102,64 @@ def graph_connectivity(graph):
     return components, largest_component
 
 
-import numpy as np
-
-# def nodos_a_distancia(graph, u, d, tol = 1e-9):
-#     """Devuelve los nodos cuya distancia euclidiana a u es d."""
-#     # posición del nodo u
-
-#     x0, y0, z0 = graph.nodes[u]["pos"]
-
-#     seleccionados = []
-#     for v in graph.nodes:
-#         if v == u:
-#             continue
-#         x, y, z = graph.nodes[v]["pos"]
-
-#         dist = np.sqrt((x - x0)**2 + (y - y0)**2 + (z - z0)**2)
-
-#         # tolerancia para evitar errores de coma flotante
-#         if abs(dist - d) < tol:
-#             seleccionados.append(v)
-
-#     return seleccionados
+def subgraph_within_distance(graph, start, n = 1):
+    # nodes at distance <= n from start
+    nodes = nx.single_source_shortest_path_length(graph, start, cutoff = n).keys()
+    # subgrapgh with those nodes
+    return graph.subgraph(nodes).copy()
 
 
+def graph_total_weight(graph):
+    """
+    Compute the total weight of the graph based on node weights.
+    """
 
-def display_graph(graph, extremes = []):
+    weights   = npa([data["weight"] for _, data in graph.nodes(data = True)])
+    total_w = weights.sum()
+    return total_w
+
+
+def graph_barycenter(graph):
+    """
+    Compute the barycenter of the graph based on node positions and weights.
+    """
+
+    positions = npa([npa(node)      for node, _ in graph.nodes(data = True)])
+    weights   = npa([data["weight"] for _, data in graph.nodes(data = True)])
+
+    total_w = weights.sum()
+    if total_w == 0: raise ValueError("Total weight is zero — the barycenter would be undefined!")
+
+    bcenter = np.sum(positions * weights[:, None], axis = 0) / total_w
+    
+    return bcenter
+
+def graph_total_weight(graph):
+    """
+    Compute the total weight of the graph based on node weights.
+    """
+
+    weights   = npa([data["weight"] for _, data in graph.nodes(data = True)])
+    total_w = weights.sum()
+    return total_w
+
+#---------------
+#   blobs
+#---------------
+
+def get_blobs(graph, extremes, distance):
+    blobs     = [subgraph_within_distance(graph, x, distance) for x in extremes]
+    blobs_ene = [graph_total_weight(blob) for blob in blobs]
+    if blobs_ene[0] < blobs_ene[1]:
+        blobs     = blobs[::-1]
+        blobs_ene = blobs_ene[::-1]
+    blobs_bc  = [graph_barycenter(blob) for blob in blobs]
+    return blobs, blobs_ene, blobs_bc
+
+#---------------
+
+
+def display_graph(graph, extremes = [], blobs = []):
     """
     Display the graph using a 2D layout.
     inputs
@@ -151,9 +186,16 @@ def display_graph(graph, extremes = []):
     # Draw nodes
     nx.draw_networkx_nodes(graph, pos, node_size = node_sizes, node_color =node_colors, cmap=plt.cm.viridis, alpha = 0.5)
 
-    xs = [pos[n][0] for n in extremes]
-    ys = [pos[n][1] for n in extremes]
-    plt.scatter(xs, ys, s = 400, c = 'red', marker = 'x', linewidths = 3, label = 'Extremos')
+    if (len(blobs) > 1):
+        for blob in blobs:
+            xs = [pos[n][0] for n in blob.nodes()]
+            ys = [pos[n][1] for n in blob.nodes()]
+            plt.scatter(xs, ys, s = 200, c = 'green', marker = '+', linewidths = 3, label = 'blob')
+
+    if len(extremes) == 2:
+        xs = [pos[n][0] for n in extremes]
+        ys = [pos[n][1] for n in extremes]
+        plt.scatter(xs, ys, s = 200, c = 'red', marker = 'x', linewidths = 3, label = 'Extremos')
 
     #plt.gca().set_aspect("equal")
     #plt.show()

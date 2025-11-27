@@ -41,6 +41,14 @@ def get_bins(coors, bin_widths = (1, 1, 1)):
 #     return data
 
 def get_deconvoluted_data(data):
+    """
+    reasigh the energy of the slice to the spine voxels according to the fraction of the energy they have in the slice
+    ensure that the total energy of the hit on the spine is one.
+    inputs:
+        data: dataframe with the event data including the decopred column
+    outputs:
+        data: dataframe with two new columns enecc (corrected energy per slice) and enecn (and normalized energy)
+    """
     ## share the energy per slice
     data['enecc'] = data.energy.values * data.decopred.values
     idgroup = ['dataset_id', 'zbin']
@@ -54,7 +62,11 @@ def get_deconvoluted_data(data):
     return data
 
 def test_get_deconvoluted_data(data):
-
+    """
+    Test that the deconvoluted data has correct energy assignments.
+    inputs:
+        data: dataframe with the event data including the decopred column with 1/0 values
+    """
     data_ = get_deconvoluted_data(data)
 
     # test that the total energy in the slice is preserved for enecc
