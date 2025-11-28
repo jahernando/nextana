@@ -50,6 +50,11 @@ def dicts_to_dataframe(long_dict, *short_dicts):
 
 
 def zora_event(evt, bin_info, bin_widths):
+    """
+    zora processing of an event
+    """
+
+    hasmc = "segclass" in evt.columns
 
     sumevt = evtfun.summary_event(evt)
 
@@ -69,6 +74,10 @@ def zora_event(evt, bin_info, bin_widths):
     blobs, extremes = graphfun.get_blobs(longest_graph, (u, v), distance = 3)
     sumblobs = graphfun.summary_blobs(longest_graph, extremes, dist, blobs)
 
+    if hasmc:
+        sumblobsmc = graphfun.summary_blobs_mc(evt, coors, bins, longest_graph, blobs)
+        sumblobs.update(sumblobsmc)
+
     df = dicts_to_dataframe(sumblobs,  sumevt, sumgraph)
 
     odata = {'graph': graph, 'longest_graph' : longest_graph, 'extremes' : extremes, 'distance' : dist,
@@ -78,9 +87,15 @@ def zora_event(evt, bin_info, bin_widths):
 
 
 
+#---------------------
+# City
+#----------------------
 
 
-def zora(datapath = datapath, ifilename = datafilename, ofilename = 'zora_output.h5',  nevents = 10):
+def zora(datapath = datapath, 
+         ifilename = datafilename, 
+         ofilename = 'zora_output.h5',  
+         nevents = 10):
 
     ifilename = datapath + ifilename
     print(f'loading {ifilename}')
@@ -98,7 +113,7 @@ def zora(datapath = datapath, ifilename = datafilename, ofilename = 'zora_output
     groupid = 'dataset_id'
     dfout = None
     for i, evt in data.groupby(groupid):
-        if i % 100 == 0: print(f"Event {i}")
+        if i % 500 == 0: print(f"Event {i}")
         if (i >= nevents): break
         odata = zora_event(evt, bin_info, bin_widths)
         df = odata['summary']

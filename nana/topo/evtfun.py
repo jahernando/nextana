@@ -97,10 +97,13 @@ def summary_event(evt):
     idd    = evt.dataset_id.unique()[0]
     nhits  = evt.energy.count()
     etot   = evt.energy.sum()
+    bclass = evt.binclass.unique()[0] if "binclass" in evt.columns else -1
     devt   = evt[evt.decopred == 1]
     spine_nhits = devt.energy.count()
     spine_ene   = devt.energy.sum()
-    df = {'dataset_id' : idd, 'nhits': nhits, 'energy': etot, 'spine_nhits': spine_nhits, 'spine_energy': spine_ene}
+    df = {'dataset_id' : idd, 'binclass' : bclass,
+          'nhits': nhits, 'energy': etot, 
+          'spine_nhits': spine_nhits, 'spine_energy': spine_ene}
     return df
 
 

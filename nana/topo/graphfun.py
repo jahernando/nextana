@@ -6,7 +6,8 @@
 import itertools as itertools
 
 import numpy             as np
-npa    = np.array
+npa  = np.array
+norm = np.linalg.norm
 
 #import pandas            as pd
 import matplotlib.pyplot as plt
@@ -145,6 +146,7 @@ def graph_total_weight(graph):
 
 def summary_graph(graphs, longest_graph):
     """
+    return the summary of the graphs and the loguest graph
     """
     ngraphs       = len(graphs)
     lgraph_nhits  = longest_graph.number_of_nodes()
@@ -160,6 +162,9 @@ def summary_graph(graphs, longest_graph):
 #---------------
 
 def get_blobs(graph, extremes, distance = 3):
+    """
+    return the blobs (subgraph at a gimen distance)
+    """
     blobs     = [subgraph_within_distance(graph, x, distance) for x in extremes]
     blobs_ene = [graph_total_weight(blob) for blob in blobs]
     if blobs_ene[0] < blobs_ene[1]:
@@ -171,6 +176,9 @@ def get_blobs(graph, extremes, distance = 3):
 
 
 def summary_blobs(graph, extremes, distance, blobs):
+    """
+    return the summary of the blobs
+    """
 
     ext_ene    = [graph.nodes[n]["weight"] for n in extremes]
     ext_degree = [graph.degree[n]          for n in extremes]
@@ -185,6 +193,49 @@ def summary_blobs(graph, extremes, distance, blobs):
     dfb = {'blob_id' : blob_id, 'blob_ene' : blob_ene, 'blob_nodes' : blob_nodes, 'blob_edges' : blob_edges}
     dfe.update(dfb)
     return dfe
+
+#------ MC
+
+
+def summary_blobs_mc(evt, coors, bins, longest_graph, blobs):
+    """
+    return the summary of the mc information of the blobs
+    """
+    h3d, _ = np.histogramdd(coors, bins = bins, weights = evt.extlabel)
+    voxels  = h3d > 0
+    mcextremes = np.argwhere(voxels > 0)
+    if (len(mcextremes) <= 0): 
+        print('No extremes ', evt.dataset_id.unique(), mcextremes)
+        return {'blob_mcext_dist' : [-1., 1.], 'blob_mcext_closenode' : [False, False],
+              'blob_mcseg' : [-1., -1.]}
+
+
+    extnodes = []
+    for mcext in mcextremes:
+        dd = sorted([(norm(mcext-np.array(node)), node) for node in longest_graph.nodes()])[0]
+        extnodes.append(dd[1])
+    #print(extnodes)
+
+    blob_mcext_dis          = []
+    blob_mcext_closenode_in = []
+    for blob in blobs:
+        #print('blob > ', blob.nodes())
+        dd   = sorted([(norm(mcext-np.array(node)), node) for node in blob.nodes() for mcext in mcextremes])[0]
+        isin = np.any([(tuple(mcext) in blob.nodes()) for mcext in extnodes])
+        blob_mcext_dis.append(dd[0])
+        blob_mcext_closenode_in.append(isin)
+
+    h3d, _ = np.histogramdd(coors, bins = bins, weights = evt.segclass)
+    voxels  = h3d >= 3
+    labelblobs = np.argwhere(voxels > 0)
+    labelblobs = [tuple(n) for n in labelblobs]
+    blob_mcsegment = [np.sum([node in labelblobs for node in blob.nodes()]) for blob in blobs]
+
+    
+    df = {'blob_mcext_dist' : blob_mcext_dis, 'blob_mcext_closenode' : blob_mcext_closenode_in,
+          'blob_mcseg' : blob_mcsegment}
+    return df
+
 
 #---------------
 # Display
