@@ -120,7 +120,6 @@ def summary_data(data):
     return df
 
 
-
 #--------------
 
 
@@ -138,3 +137,4 @@ def event_display(coors, bins, ene = None):
         plt.xlabel(xl); plt.ylabel(yl); plt.title(xl+yl+' projection'); plt.colorbar(label = clabel)
     plt.tight_layout()
     return cv
+

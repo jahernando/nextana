@@ -22,11 +22,22 @@ import networkx as nx
 
 import nana.topo.evtfun    as evtfun
 import nana.topo.graphfun  as graphfun
+import nana.topo.blobfun   as blobfun
+
+
+#--- configuration         
 
 datafilename = 'dataset_15607_DEP_deco.h5'
 mcfilename   = 'dataset_4bar_MC_DEP_deco.h5'
 datapath     = '/mnt/netapp1/Store_next_data/NEXT100/deco_seg/'
 
+blob_radius = 2.1
+get_blobs   = lambda graph, extremes: blobfun.get_blobs_inradius(graph, extremes, radius = blob_radius)
+#blob_distance = 3
+#get_blobs   = lambda graph, extremes: blobfun.get_blobs_atdistance(graph, extremes, distance = blob_distance)
+
+
+#---------------
 
 def dicts_to_dataframe(long_dict, *short_dicts):    
     # number of files
@@ -47,6 +58,46 @@ def dicts_to_dataframe(long_dict, *short_dicts):
 
     # Convert to DataFrame
     return pd.DataFrame(data)
+
+def zora_event_new(evt, bin_info, bin_widths, varname = 'energy'):
+    """
+    zora processing of an event
+    """
+
+    # event summary
+    hasmc = "segclass" in evt.columns
+    sumevt = evtfun.summary_event(evt)
+    ene = evt[varname].values
+    sel = ene > 0.
+
+    # graph
+    evt   = evt[sel]
+    graph = graphfun.convert_to_graph_direct(evt, bin_info)
+    components, longest_graph  = graphfun.graph_connectivity(graph)
+
+    sumgraph = graphfun.summary_graph(components, longest_graph)
+    extremes, dist = graphfun.graph_extremes(longest_graph)
+    
+    #blbos
+    blobs    = get_blobs(longest_graph, extremes)
+    blobs_ene, blobs, extremes = blobfun.order_blobs(blobs, extremes)
+    sumblobs = blobfun.summary_blobs(longest_graph, extremes, dist, blobs, blobs_ene)
+
+    #mc
+    if hasmc:
+        sumblobsmc = blobfun.summary_blobs_mc(evt, longest_graph, blobs)
+        sumblobs.update(sumblobsmc)
+
+    df = dicts_to_dataframe(sumblobs,  sumevt, sumgraph)
+
+    odata = {'graph': graph, 'longest_graph' : longest_graph, 'extremes' : extremes, 'distance' : dist,
+             'blobs' : blobs, 'summary' : df}
+
+    return odata
+
+
+
+
 
 
 def zora_event(evt, bin_info, bin_widths):
@@ -71,11 +122,13 @@ def zora_event(evt, bin_info, bin_widths):
     u, v, dist = graphfun.graph_extremes(longest_graph)
     # print('extremes distance:', dist, ", extrenes nodes:", u, v)
     
-    blobs, extremes = graphfun.get_blobs(longest_graph, (u, v), distance = 3)
-    sumblobs = graphfun.summary_blobs(longest_graph, extremes, dist, blobs)
+    extremes = (u, v)
+    blobs    = get_blobs(longest_graph, extremes)
+    blobs_ene, blobs, extremes = blobfun.order_blobs(blobs, extremes)
+    sumblobs = blobfun.summary_blobs(longest_graph, extremes, dist, blobs)
 
     if hasmc:
-        sumblobsmc = graphfun.summary_blobs_mc(evt, coors, bins, longest_graph, blobs)
+        sumblobsmc = blobfun.summary_blobs_mc(evt, coors, bins, longest_graph, blobs)
         sumblobs.update(sumblobsmc)
 
     df = dicts_to_dataframe(sumblobs,  sumevt, sumgraph)
