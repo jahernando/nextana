@@ -244,7 +244,12 @@ def summary_mcext(graph, extremes, blobs, ext_mcgraphs):
     return df
 
 
-# def summary_mcblobs(blobs, blobs_mcblobs):
+def summary_mcblobs(blobs, blob_mcgraphs):
+
+    bene = [np.max([np.sum([data['energy'] for node, data in mcblob.nodes() if node in blob.nodes()]) for mcblob in blob_mcgraphs]) for blob in blobs]
+
+    df = {'mcblob_ene' : bene}
+    return df
 
 #     h3d, _ = np.histogramdd(coors, bins = bins, weights = evt.extlabel)
 #     voxels  = h3d > 0

@@ -22,7 +22,6 @@ import networkx as nx
 
 import nana.topo.evtfun    as evtfun
 import nana.topo.graphfun  as graphfun
-import nana.topo.blobfun   as blobfun
 
 
 #--- configuration         
@@ -85,6 +84,10 @@ def zora_event_new(evt, bin_info, bin_widths, varname = 'energy'):
 
     #mc
     if hasmc:
+        egraph  = graphfun.convert_to_graph_direct(evt, bin_info, ename = 'extlabel')
+        egraphs, _  = graphfun.graph_connectivity(graph)
+
+        bgraph  = graphfun.convert_to_graph_direct(evt, bin_info, ename = '') 
         sumblobsmc = blobfun.summary_blobs_mc(evt, longest_graph, blobs)
         sumblobs.update(sumblobsmc)
 

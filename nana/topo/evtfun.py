@@ -123,7 +123,30 @@ def summary_data(data):
 #--------------
 
 
-def event_display(coors, bins, ene = None):
+def display_event(evt, bin_info, ename = 'energy'):
+
+    # sel the voxels with some energy
+    ene = evt[ename].values
+    sel = ene > 0
+    evt_ = evt[sel]
+
+    # get the coordenates
+    coors      = get_coors(evt_, bin_info)
+    bin_widths = get_bin_widths(bin_info)
+    bins       = get_bins(coors, bin_widths)
+    ene    = evt_[ename].values
+
+    # display event
+    cv = display_coors(coors, bins, ene)
+
+    # display mc
+    hasmc = 'extlabel' in list(evt.columns)
+    if not hasmc: return cv
+
+
+
+
+def display_coors(coors, bins, ene = None):
     """Display a 2D histogram of the event given the coordinates and bin width."""
     cmap = 'plasma' # 'viridis', 'cividis', 'plasma'
     cv   = pltext.canvas(4, 2)
@@ -138,3 +161,5 @@ def event_display(coors, bins, ene = None):
     plt.tight_layout()
     return cv
 
+
+#------------------
