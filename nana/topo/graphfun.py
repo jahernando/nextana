@@ -167,14 +167,55 @@ def summary_graph(graphs, longest_graph):
           'lgraph_energy' : lgraph_energy}
     return df
 
+#-------------
+# Extremes
+#-------------
+
+def get_extremes(graph):
+
+    extremes, distance = graph_extremes(graph)
+    return extremes, distance
+
+def get_extremes_from_mc(graph, ext_mcgraphs):
+
+    enodes   = list([egraph.nodes() for egraph in ext_mcgraphs])
+    print(enodes)
+    extremes = [node for node in graph.nodes() if node in enodes]
+
+    if (len(extremes) != 2): return extremes, -1
+
+    distance = nx.shortest_path(graph, source = extremes[0], target = extremes[1])
+
+    return extremes, distance
+
+def summary_extremes(graph, extremes, distance):
+
+    ext_ene    = [graph.nodes[n]["energy"] for n in extremes]
+    ext_degree = [graph.degree[n]          for n in extremes]
+    ext_dist   = [distance                 for n in extremes]
+
+    df = {'ext_ene' : ext_ene, 'ext_degree' : ext_degree, 'ext_dist' : ext_dist}
+    return df
+
+def summary_mcextremes(graph, extremes, ext_mcgraphs):
+    
+    xmcpos = [graph_barycenter(gext) for gext in ext_mcgraphs]
+    xpos   = [graph.nodes[ext]['position'] for ext in extremes]
+
+    ddext  = [np.min([norm(x - xmc) for xmc in xmcpos]) for x in xpos]
+
+    df = {'mcext_ext' : ddext}
+    return df
+
+
 #------------
 # Blobs
 #------------
 
-def get_blobs(graph, extremes):
+def get_blobs_radius(graph, extremes, radius = 40.):
 
     xpos      = [graph.nodes[extreme]["position"] for extreme in extremes]
-    blobs     = [subgraph_inradius(graph, x)    for x in xpos] 
+    blobs     = [subgraph_inradius(graph, x, radius = radius)  for x in xpos] 
     blobs_ene = [graph_energy(b) for b in blobs]
     if blobs_ene[0] < blobs_ene[1]:
         blobs_ene = blobs_ene[::-1]

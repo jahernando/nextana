@@ -7,7 +7,9 @@ import itertools as itertools
 
 import numpy             as np
 import pandas            as pd
+from   scipy             import stats
 import matplotlib.pyplot as plt
+import matplotlib.colors as pltcolors
 
 #import hipy.utils        as ut
 import hipy.pltext       as pltext
@@ -134,24 +136,46 @@ def display_event(evt, bin_info, ename = 'energy'):
     coors      = get_coors(evt_, bin_info)
     bin_widths = get_bin_widths(bin_info)
     bins       = get_bins(coors, bin_widths)
-    ene    = evt_[ename].values
+    ene        = evt_[ename].values
 
     # display event
-    cv = display_coors(coors, bins, ene)
+    cv = display_coors(coors, bins, ene, 'energy')
 
     # display mc
     hasmc = 'extlabel' in list(evt.columns)
     if not hasmc: return cv
 
+    cv1 = display_coors_max(coors, bins, evt_.segclass.values, 'segment')
+
+    trklabel = evt_.extlabel.values + 1
+    cv2 = display_coors_max(coors, bins, trklabel, 'track')
+
+    return (cv, cv1, cv2)
 
 
+def _cmap_white(cmap_name):
+    cmap = plt.get_cmap(cmap_name)
 
-def display_coors(coors, bins, ene = None):
+    # Copiamos la LUT completa
+    lut = cmap(np.linspace(0, 1, cmap.N))
+
+    # El primer color (índice 0) corresponde a valor 0 → lo pintamos de blanco
+    lut[0] = [1, 1, 1, 1]  # RGBA blanco puro
+
+    # Crear un nuevo colormap modificado
+    cmap_white = pltcolors.ListedColormap(lut)
+    return cmap_white
+    
+
+def display_coors(coors, bins, value, name):
     """Display a 2D histogram of the event given the coordinates and bin width."""
-    cmap = 'plasma' # 'viridis', 'cividis', 'plasma'
-    cv   = pltext.canvas(4, 2)
-    clabel = 'counts' if ene is None else 'energy (normalized)'
-    ene    = ene if ene is not None else np.ones_like(coors[0])
+    cmap_name   = 'plasma' # 'viridis', 'cividis', 'plasma'
+    cmap = _cmap_white(cmap_name)
+
+    cmap.set_under('white')
+    cv     = pltext.canvas(3, 3)
+    clabel = name
+    ene    = value
     labels = ['X', 'Y', 'Z']
     for k, coor in enumerate(((0, 1), (2, 1), (0, 2))):
         i, j = coor
@@ -161,5 +185,23 @@ def display_coors(coors, bins, ene = None):
     plt.tight_layout()
     return cv
 
+def display_coors_max(coors, bins, value, name):
+
+    cmap_name   = 'plasma' # 'viridis', 'cividis', 'plasma'
+    cmap = plt.get_cmap(cmap_name)
+
+    cv     = pltext.canvas(3, 3)
+    clabel = name
+    labels = ['X', 'Y', 'Z']
+
+    for k, coor in enumerate(((0, 1), (2, 1), (0, 2))):
+        i, j = coor
+        xbins = (bins[i], bins[j])
+        histo, xedges, yedges, _ = stats.binned_statistic_2d(coors[i], coors[j], value, statistic = 'max', bins = xbins)
+        cv(k+1); plt.pcolormesh(xedges, yedges, histo.T, cmap = cmap)
+        xl, yl = labels[i], labels[j]
+        plt.xlabel(xl); plt.ylabel(yl); plt.title(xl+yl+' projection'); plt.colorbar(label = clabel)
+    plt.tight_layout()
+    return cv
 
 #------------------
