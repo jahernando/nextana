@@ -9,6 +9,74 @@ import hipy.utils       as ut
 
 from mpl_toolkits.mplot3d    import Axes3D
 
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_energy_projections(
+    x, y, z, ene,
+    bins=50,
+    range_xy=None,
+    range_yz=None,
+    range_zx=None
+):
+    """
+    Plot 2D histograms of energy accumulation for the projections:
+    (x, y), (y, z), and (z, x).
+
+    Parameters
+    ----------
+    x, y, z : array-like
+        Coordinates of the points.
+    ene : array-like
+        Energy associated to each point.
+    bins : int or tuple
+        Number of bins for the histograms.
+    range_xy, range_yz, range_zx : tuple or None
+        Ranges for the histograms, e.g. ((xmin, xmax), (ymin, ymax)).
+    """
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+    # (x, y)
+    hxy = axes[0].hist2d(
+        x, y,
+        bins=bins,
+        range=range_xy,
+        weights=ene
+    )
+    axes[0].set_xlabel("x")
+    axes[0].set_ylabel("y")
+    axes[0].set_title("Energy projection (x, y)")
+    plt.colorbar(hxy[3], ax=axes[0], label="Accumulated energy")
+
+    # (y, z)
+    hyz = axes[1].hist2d(
+        y, z,
+        bins=bins,
+        range=range_yz,
+        weights=ene
+    )
+    axes[1].set_xlabel("y")
+    axes[1].set_ylabel("z")
+    axes[1].set_title("Energy projection (y, z)")
+    plt.colorbar(hyz[3], ax=axes[1], label="Accumulated energy")
+
+    # (z, x)
+    hzx = axes[2].hist2d(
+        z, x,
+        bins=bins,
+        range=range_zx,
+        weights=ene
+    )
+    axes[2].set_xlabel("z")
+    axes[2].set_ylabel("x")
+    axes[2].set_title("Energy projection (z, x)")
+    plt.colorbar(hzx[3], ax=axes[2], label="Accumulated energy")
+
+    plt.tight_layout()
+    plt.show()
+
+
 def track(x       : np.array,
           y       : np.array, 
           z       : np.array,
