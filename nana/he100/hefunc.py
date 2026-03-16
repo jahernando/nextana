@@ -1,5 +1,19 @@
 #-----------------------
-# Util Functions for HE analysis
+# hefunc.py - Utility functions for High Energy (HE) analysis in NEXT-100
+#
+# This module provides the core functions for processing Sophronia hits
+# from the NEXT-100 detector. The main processing pipeline is:
+#
+#   1. Load hits from HDF5 files (get_hits)
+#   2. Cluster hits using DBSCAN to separate tracks from scatter (cluster_hits)
+#   3. Redistribute SiPM light among surviving hits after threshold (hits_redistribute_light)
+#   4. Recalibrate energy using a 3D Kr correction map (recalibrate_energy)
+#   5. Summarize events per cluster (event_cluster_summary)
+#
+# Dependencies:
+#   - hipy: histogram and utility library (internal)
+#   - invisible_cities (IC): NEXT experiment reconstruction framework
+#   - scipy: for interpolation of Kr correction maps
 #------------------------
 
 from os import listdir
@@ -12,26 +26,31 @@ from   scipy             import optimize
 from   scipy.interpolate import griddata
 
 import hipy.utils        as ut
-#import hipy.histos       as histos
-#import hipy.pltext       as pltext
-#import hipy.profile      as prof
 
 from invisible_cities.io.dst_io import load_dst, load_dsts
 
-from sklearn.cluster import DBSCAN
-
+# True peak energies (MeV) for the Th-228 calibration source:
+# 511 keV (e+e- annihilation), 583 keV (Tl-208), 727 keV (Bi-212),
+# 860 keV (Tl-208), 1592 keV (DEP), 2615 keV (photoelectric peak)
 E_peaks_true = (0.511, 0.583, 0.727, 0.860, 1.592, 2.615)
 
-# Util
-#---------------------------------
+# --- File utilities ---
 
 def get_files(path, token = '.h5'):
-    """ get filename in a directory with a given token
+    """ Return sorted list of filenames in `path` that contain `token`.
+
+    Parameters
+    ----------
+    path  : str   - directory to scan
+    token : str   - substring that filenames must contain (default '.h5')
+
+    Returns
+    -------
+    list[str] - sorted filenames (not full paths)
     """
     filenames = listdir(path)
     filenames.sort()
     filenames = [file for file in filenames if file.find(token) >0 ]
-    #print(filenames)
     return filenames
 
 
@@ -83,25 +102,45 @@ def get_files(path, token = '.h5'):
 
 #     return hits, esum
 
-# Hits
-#----------------------------
+# --- Hit loading and selection ---
 
-
-def get_hits(ifilename : str, 
+def get_hits(ifilename : str,
              with_cluster: bool = False):
-    
+    """ Load hits from an HDF5 file.
+
+    Parameters
+    ----------
+    ifilename    : str  - path to the HDF5 file (Sophronia output or pre-clustered)
+    with_cluster : bool - if True, read from the 'hits' table (already clustered);
+                          if False, read from RECO/Events and drop unused columns.
+
+    Returns
+    -------
+    pd.DataFrame with columns: event, time, X, Y, Z, Q, E, Ec (and cluster_id if with_cluster)
+    """
     print(f'loading {ifilename}')
     if (with_cluster):
         return pd.read_hdf(ifilename, 'hits');
-    
+
     hits  = load_dst(ifilename, "RECO", "Events")
     labels_drop = ['npeak', 'Xpeak', 'Ypeak', 'nsipm', 'Xrms', 'Yrms', 'Qc', 'Ep', 'track_id']
     hits.drop(labels_drop, axis = 1, inplace = True)
     return hits
 
-def select_event_in_energy_range(hits : pd.DataFrame, 
+def select_event_in_energy_range(hits : pd.DataFrame,
                                  erange : tuple ):
+    """ Keep only hits belonging to events whose total corrected energy (Ec)
+    falls within `erange = (Emin, Emax)`.
 
+    Parameters
+    ----------
+    hits   : pd.DataFrame - hit table with 'event' and 'Ec' columns
+    erange : tuple(float, float) - (Emin, Emax) energy window
+
+    Returns
+    -------
+    pd.DataFrame - filtered copy of hits
+    """
     hsum  = hits.groupby(['event'], as_index = False).sum()
     sel_de = ut.in_range(hsum.Ec.values, erange)
     events_de = hsum.event[sel_de].values
@@ -110,27 +149,54 @@ def select_event_in_energy_range(hits : pd.DataFrame,
     return hits
 
 def cluster_hits(hits: pd.DataFrame):
+    """ Apply DBSCAN clustering to hits of each event independently.
+    Adds 'cluster_id' (cluster label or -1 for scatter) and
+    'cluster_id_in' (cluster whose z-range contains the hit, or -1).
+
+    Parameters
+    ----------
+    hits : pd.DataFrame - must contain columns: event, X, Y, Z
+
+    Returns
+    -------
+    pd.DataFrame - with added columns cluster_id and cluster_id_in
+    """
     hits = hits.groupby(['event']).apply(cluster_hits_)
     hits = hits.reset_index(drop = True)
     return hits
 
-def hits_redistribute_light(hits_df: pd.DataFrame, 
-                            sipm_threshold: float, 
+def hits_redistribute_light(hits_df: pd.DataFrame,
+                            sipm_threshold: float,
                             preserve_event_light: bool = True):
-    '''
-    Redistributes the total energy of each (event, Z) group among the hits
-    that survive a charge threshold, proportional to their charge.
-    '''
+    """ Redistribute the energy of each (event, Z) slice among hits that
+    pass a SiPM charge threshold, proportional to their charge.
+
+    Steps:
+      1. Compute total E per (event, Z) slice before the cut.
+      2. Apply SiPM charge threshold (Q > sipm_threshold).
+      3. Redistribute the original slice energy proportionally to Q.
+      4. Optionally rescale so total event energy is preserved.
+
+    Parameters
+    ----------
+    hits_df         : pd.DataFrame - hit table with columns E, Q, event, Z
+    sipm_threshold  : float        - minimum SiPM charge in photoelectrons
+    preserve_event_light : bool    - if True, rescale to conserve total event energy
+
+    Returns
+    -------
+    pd.DataFrame - filtered hits with added columns: E_evz, Q_evz, Q_norm, E_norm
+    """
     hits = hits_df.copy()
-    # 1. Calcular energía total y carga total por (event, Z) ANTES del corte
+    # 1. Compute total energy and charge per (event, Z) BEFORE the cut
     energy_sum = hits.groupby(['event', 'Z'])['E'].sum().rename('E_evz')
     hits = hits.merge(energy_sum, on=['event', 'Z'], how='left')
-    # 2. Aplicar el corte
+    # 2. Apply the charge threshold cut
     hits_n = hits[hits.Q > sipm_threshold].copy()
     charge_sum = hits_n.groupby(['event', 'Z'])['Q'].sum().rename('Q_evz')
-    # 3. Añadir las columnas globales de suma de energía y carga
+    # 3. Add global energy and charge sum columns
     hits_n = hits_n.merge(charge_sum, on=['event', 'Z'], how='left')
-    # 4. Redistribuir proporcionalmente
+    # 4. Redistribute energy proportionally to charge
     hits_n['Q_norm'] = hits_n['Q'] / hits_n['Q_evz']
     hits_n['E_norm'] = hits_n['E_evz'] * hits_n['Q_norm']
 
@@ -178,33 +244,49 @@ def hits_redistribute_light(hits_df: pd.DataFrame,
 #         hits.to_hdf(ofilename, 'hits', mode = 'w')
 #     return hits
 
-# Labeling Hits 
-#------------------------------------------
+# --- Hit labeling (DBSCAN clustering) ---
 
 def cluster_hits_(df):
-    """ label hits as scatter or isolated hits (-1) or hit in a cluster (0, 1, 2, ...)
-            label is stored as the column 'cluster_id' in the DF
-        label hits as in the same z-range of a given cluster 
-            i.e. -1 if out of any cluster, 0 in the same z-range of cluster 0, 
-            if a hits is in the same z-range of several cluster gets the label of the cluster with the lower index
-            label is stored as the column 'cluster_id_in' in the DF
-    """ 
+    """ Label hits within a single event as scatter (-1) or belonging to
+    a cluster (0, 1, 2, ...) using DBSCAN, then assign each hit the
+    z-range label of its enclosing cluster.
+
+    Adds two columns:
+      - cluster_id   : DBSCAN label (-1 = noise/scatter, >= 0 = cluster index)
+      - cluster_id_in: index of the cluster whose z-range contains this hit
+                       (-1 if outside all cluster z-ranges)
+    """
     df = label_hits_(df)
     df = label_hits_in_(df)
     return df
 
 def label_hits_(df, scale = (14.55, 15.55, 3.7), eps = 2.3, max_clusters = 5):
+    """ Run DBSCAN on (X, Y, Z) coordinates after rescaling.
+
+    Parameters
+    ----------
+    scale        : tuple - (xy_scale, _, z_scale) to normalize coordinates
+                   before DBSCAN (accounts for different detector granularity
+                   in transverse vs longitudinal directions)
+    eps          : float - DBSCAN neighbourhood radius (in scaled units)
+    max_clusters : int   - min_samples parameter for DBSCAN (minimum points
+                   to form a dense region)
+    """
     coors = df[['X', 'Y', 'Z']].to_numpy()
-        
+
     coors[:, :2] /= scale[0]
     coors[:, 2]  /= scale[2]
-        
+
     labels = DBSCAN(eps = eps, min_samples = max_clusters).fit_predict(coors)
 
     df['cluster_id'] = labels
     return df
 
 def label_hits_in_(df):
+    """ For each hit, determine which cluster's z-range it falls into.
+    If a hit falls in the z-range of multiple clusters, the one with the
+    lowest index wins (due to reverse iteration order).
+    """
     cluster_id = df.cluster_id.values
     zs = df.Z.values
     cluster_id_in = -1 * np.ones(len(cluster_id), int)
@@ -217,8 +299,7 @@ def label_hits_in_(df):
     df['cluster_id_in'] = cluster_id_in
     return df
 
-# Energy correction
-#--------------------------------------
+# --- Energy correction using Kr maps ---
 
 # def hits_redistribute_light(hits_df: pd.DataFrame, sipm_threshold: float, 
 #                             preserve_event_light: bool = True):
@@ -227,15 +308,15 @@ def label_hits_in_(df):
 #     that survive a charge threshold, proportional to their charge.
 #     '''
 #     hits = hits_df.copy()
-#     # 1. Calcular energía total y carga total por (event, Z) ANTES del corte
+#     # 1. Compute total energy and charge per (event, Z) BEFORE the cut
 #     energy_sum = hits.groupby(['event', 'Z'])['E'].sum().rename('E_evz')
 #     hits = hits.merge(energy_sum, on=['event', 'Z'], how='left')
-#     # 2. Aplicar el corte
+#     # 2. Apply the charge threshold cut
 #     hits_n = hits[hits.Q > sipm_threshold].copy()
 #     charge_sum = hits_n.groupby(['event', 'Z'])['Q'].sum().rename('Q_evz')
-#     # 3. Añadir las columnas globales de suma de energía y carga
+#     # 3. Add global energy and charge sum columns
 #     hits_n = hits_n.merge(charge_sum, on=['event', 'Z'], how='left')
-#     # 4. Redistribuir proporcionalmente
+#     # 4. Redistribute energy proportionally to charge
 #     hits_n['Q_norm'] = hits_n['Q'] / hits_n['Q_evz']
 #     hits_n['E_norm'] = hits_n['E_evz'] * hits_n['Q_norm']
 
@@ -249,12 +330,20 @@ def label_hits_in_(df):
 #     return hits_n
 
 def get_corrector(krmap_filename):
-    """ return a function to correct the energy of this hits using (z, x, y) coordinates
-        the correction is based on a 3D map (GML)
-    """
+    """ Build a correction function from a 3D Krypton lifetime map.
 
+    The Kr map provides a multiplicative correction factor as a function
+    of (Z, X, Y) to compensate for electron attachment and geometric effects.
+
+    Parameters
+    ----------
+    krmap_filename : str - path to the .map3d HDF5 file containing '/krmap'
+
+    Returns
+    -------
+    callable(dt, x, y) -> np.ndarray of correction factors
+    """
     krmap = pd.read_hdf(krmap_filename, "/krmap")
-    #meta  = pd.read_hdf(pathdata + "GML_krmap_combined.map3d", "/mapmeta")
 
     dtxy_map   = krmap.loc[:, list("zxy")].values
     factor_map = krmap.factor.values
@@ -265,13 +354,24 @@ def get_corrector(krmap_filename):
     return corr
 
 def recalibrate_energy(hits : pd.DataFrame, krmap_filename : str, scale : float = 1.):
+    """ Apply Kr-map correction to the hit energies.
+
+    Parameters
+    ----------
+    hits            : pd.DataFrame - hit table with E, X, Y, Z columns
+    krmap_filename  : str          - path to Kr correction map
+    scale           : float        - optional global scale factor
+
+    Returns
+    -------
+    np.ndarray - corrected energy values (Ec = scale * E * correction_factor)
+    """
     E, X, Y, Z = hits.E.values, hits.X.values, hits.Y.values, hits.Z.values
     corrector = get_corrector(krmap_filename)
     Ec  = scale * E * corrector(Z, X, Y)
     return Ec
 
-# Event summary
-#--------------------------------------    
+# --- Event summary ---
 
 # def event_summary(hits):
 #     """ create an event summary from a DF of sophronia (extended hits) 
@@ -345,21 +445,39 @@ def recalibrate_energy(hits : pd.DataFrame, krmap_filename : str, scale : float 
 #     return pd.DataFrame(df)
 
 def event_cluster_summary(hits):
-    """ create an event summary from a DF of sophronia (extended hits) 
+    """ Create a per-event, per-cluster summary from processed hits.
+
+    Groups hits by (event, cluster_id) and computes for each group:
+      - nhits  : number of hits
+      - energy : sum of corrected energy (Ec)
+      - spatial extent: min, max, mean of X, Y, Z, and R = sqrt(X^2+Y^2)
+
+    The cluster_id = -1 row (if present) corresponds to scatter/isolated hits.
+
+    Parameters
+    ----------
+    hits : pd.DataFrame - processed hits with columns: event, cluster_id,
+                          time, X, Y, Z, Ec
+
+    Returns
+    -------
+    pd.DataFrame with columns: event, cluster, nhits, time, energy,
+                               xmin, xmax, xave, ymin, ymax, yave,
+                               zmin, zmax, zave, rmin, rmax, rave
     """
 
     ehits = hits.groupby(['event', 'cluster_id'], as_index = False)
     nentries = len(ehits)
 
-    keys  = ['event', 'cluster', 'nhits', 'time', 'energy', 
+    keys  = ['event', 'cluster', 'nhits', 'time', 'energy',
             'xmin', 'xmax', 'xave', 'ymin', 'ymax', 'yave', 'zmin', 'zmax', 'zave',
             'rmin', 'rmax', 'rave']
 
-    df = {}   
+    df = {}
     for i, key in enumerate(keys):
         dtype = float if i >= 3 else int
         df[key] = np.zeros(nentries, dtype = dtype)
- 
+
     def entry_(ihits, i):
 
         df['event'][i]   = ihits.event.max()
@@ -377,7 +495,7 @@ def event_cluster_summary(hits):
     for _, ihits in ehits:
         entry_(ihits, ii)
         ii += 1
-   
+
     return pd.DataFrame(df)
 
 
